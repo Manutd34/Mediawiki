@@ -1,0 +1,251 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: 'AWS Resources for Mediawiki application'
+Parameters:
+ Environment:
+  Type: String
+  AllowedValues:
+  - Dev
+  - Qa
+  - Prod
+  Description: Enter the environment (Dev, Qa, Prod)
+  Default: Dev
+ AMI:
+  Type: AWS::EC2::Image::Id	
+  Description: To get latest AMI ID for Redhat Linux server
+  Default: ami-06817f01dcc7f30be
+ VPC:
+  Type: AWS::EC2::VPC::Id
+  Description: VPC ID for existing private cloud
+  Default: vpc-cb6ecda0
+ Subnet1:
+  Type: String
+  Description: List of subnets available in virtual private cloud
+  Default: subnet-af7f17e3
+ Subnet2:
+  Type: String
+  Description: List of subnets available in virtual private cloud
+  Default: subnet-5c488337
+ KeyName:
+  Type: AWS::EC2::KeyPair::KeyName
+  Description: Name of an existing EC2 key pair for SSH access to the EC2 instance.
+  Default: Mediawiki_key
+ CertificateARN:
+  Type: String
+  Description: ARN Certificate details from ACM
+  Default: arn:aws:acm:us-east-2:271416318392:certificate/47b58fc3-54aa-4ac3-80dd-9b79b0f2f7aa
+ HostZone:
+  Type: String
+  Description: Creating Route53 record for ALB DNS name
+  Default: mediawiki.poc.com.
+Mappings:
+ EnvMap:
+  Dev:
+   Role: 'arn:aws:iam::271416318392:role/aws-service-role/trustedadvisor.amazonaws.com/AWSServiceRoleForTrustedAdvisor'
+   InstanceType: 't2.micro'
+   # Below details for EC2 instance tags
+   Project: 'MediaWiki Deployment'
+   OwnerContact: 'Nithin Chandran'
+   WebName: 'Mediawiki-app'
+
+Resources:
+ InstanceSecurityGroup:
+  Type: AWS::EC2::SecurityGroup
+  Properties:
+   GroupDescription: Allow public trafficto access Mediawiki 
+   VpcId: !Ref VPC
+   Tags:
+   - Key: OwnerContact
+     Value: !FindInMap [EnvMap, !Ref "Environment", OwnerContact]
+   - Key: Project
+     Value: !FindInMap [EnvMap, !Ref "Environment", Project]
+   SecurityGroupIngress:
+   - IpProtocol: tcp
+     FromPort: 443
+     ToPort: 443
+     CidrIp: 0.0.0.0/0
+   - IpProtocol: tcp
+     FromPort: 80
+     ToPort: 80
+     CidrIp: 0.0.0.0/0
+   - IpProtocol: tcp
+     FromPort: 22
+     ToPort: 22
+     CidrIp: 0.0.0.0/0
+   SecurityGroupEgress:
+   - IpProtocol: tcp
+     FromPort: 0
+     ToPort: 65535
+     CidrIp: 0.0.0.0/0
+ 
+ WebServerGroup:
+  Type: 'AWS::AutoScaling::AutoScalingGroup'
+  Properties:
+   AutoScalingGroupName: 'MediaWiki-App'
+   VPCZoneIdentifier:
+   - !Ref Subnet1
+   - !Ref Subnet2
+   LaunchConfigurationName: !Ref MediawikiLaunchConfig
+   MinSize: '1'
+   MaxSize: '5'
+   DesiredCapacity: '1'
+   TargetGroupARNs:
+   - !Ref ALBTargetGroupMediaWiki
+   Tags:
+   - Key: OwnerContact
+     Value: !FindInMap [EnvMap, !Ref "Environment", OwnerContact]
+     PropagateAtLaunch: 'true'
+   - Key: Project
+     Value: !FindInMap [EnvMap, !Ref "Environment", Project]
+     PropagateAtLaunch: 'true'
+   - Key: Name
+     Value: !FindInMap [EnvMap, !Ref "Environment", WebName]
+     PropagateAtLaunch: 'true'
+  CreationPolicy:
+   ResourceSignal:
+    Count: '0'
+    Timeout: PT15M
+
+ MediawikiLaunchConfig:
+  Type: 'AWS::AutoScaling::LaunchConfiguration'
+  Properties:
+   LaunchConfigurationName: 'MediaWiki-lc'
+   ImageId: !Ref AMI
+   #IamInstanceProfile: !FindInMap [EnvMap, !Ref "Environment", Role]
+   SecurityGroups:
+   - !Ref InstanceSecurityGroup
+   InstanceType: !FindInMap [EnvMap, !Ref "Environment", InstanceType]
+   KeyName: !Ref KeyName
+   UserData:
+    Fn::Base64:
+     !Sub |
+      #!/bin/bash
+      sudo -s
+      cd /home
+      apt update
+      echo mysql-server-5.7 mysql-server/root_password password PASSWORD | debconf-set-selections   
+      echo mysql-server-5.7 mysql-server/root_password_again password PASSWORD | debconf-set-selections
+      sudo apt-get install apache2 mysql-server php php-mysql libapache2-mod-php php-xml php-mbstring -y
+      cd /var/www/
+      wget https://releases.wikimedia.org/mediawiki/1.30/mediawiki-1.30.0.tar.gz
+      tar -xvzf mediawiki-1.30.0.tar.gz
+      mv html/ htmlold
+      mv mediawiki-1.30.0 html
+
+      #Setting up database and previleges
+      mysql -u root -p<password> -e "CREATE USER 'Thoughtworks'@'localhost' IDENTIFIED BY 'poc';create database wikiinfo;use wikiinfo;GRANT ALL ON wikiinfo.* TO 'Thoughtworks'@'localhost';FLUSH PRIVILEGES;"
+
+      #Wiki server start
+      service apache2 restart
+
+
+ ScalingUpPolicy:
+  Type: AWS::AutoScaling::ScalingPolicy
+  Properties:
+   AdjustmentType: ChangeInCapacity
+   AutoScalingGroupName:
+    Ref: WebServerGroup
+   Cooldown: '1'
+   ScalingAdjustment: '1'
+  
+ CPUAlarmHigh:
+  Type: AWS::CloudWatch::Alarm
+  Properties:
+   AlarmDescription: Alarm if CPU utlization is too high
+   Statistic: Average
+   MetricName: CPUUtilization
+   ComparisonOperator: GreaterThanOrEqualToThreshold
+   Threshold: '60'
+   EvaluationPeriods: '1'
+   Period: '180'
+   AlarmActions:
+   - Ref: ScalingUpPolicy
+   Namespace: AWS/EC2
+   Dimensions:
+   - Name: AutoScalingGroupName
+     Value:
+       Ref: WebServerGroup
+  
+ ScalingDownPolicy:
+  Type: AWS::AutoScaling::ScalingPolicy
+  Properties:
+   AdjustmentType: ChangeInCapacity
+   AutoScalingGroupName:
+    Ref: WebServerGroup
+   Cooldown: '1'
+   ScalingAdjustment: '-1'
+  
+ CPUAlarmLow:
+  Type: AWS::CloudWatch::Alarm
+  Properties:
+   AlarmDescription: "Alarm if CPU utlization is low"
+   Statistic: Average
+   MetricName: CPUUtilization
+   ComparisonOperator: LessThanOrEqualToThreshold
+   Threshold: '60'
+   EvaluationPeriods: '1'
+   Period: '180'
+   AlarmActions:
+   - Ref: ScalingDownPolicy
+   Namespace: AWS/EC2
+   Dimensions:
+   - Name: AutoScalingGroupName
+     Value:
+       Ref: WebServerGroup
+
+ ApplicationLoadBalancer:
+  Type: 'AWS::ElasticLoadBalancingV2::LoadBalancer'
+  Properties:
+   Name: Mediawiki-app
+   Scheme: internal
+   SecurityGroups:
+   - !Ref InstanceSecurityGroup
+   Subnets:
+   - !Ref Subnet1
+   - !Ref Subnet2
+   Tags:
+   - Key: OwnerContact
+     Value: !FindInMap [EnvMap, !Ref "Environment", OwnerContact]
+   - Key: Project
+     Value: !FindInMap [EnvMap, !Ref "Environment", Project]
+ ALBListener80:
+  Type: 'AWS::ElasticLoadBalancingV2::Listener'
+  Properties:
+   DefaultActions:
+    - Type: forward
+      TargetGroupArn: !Ref ALBTargetGroupMediaWiki
+   LoadBalancerArn: !Ref ApplicationLoadBalancer
+   Port: 80
+   Protocol: HTTP
+   #Certificates:
+   #- CertificateArn: !Ref CertificateARN
+   #SslPolicy: 'ELBSecurityPolicy-TLS-1-2-2017-01'
+
+ ALBTargetGroupMediaWiki:
+  Type: 'AWS::ElasticLoadBalancingV2::TargetGroup'
+  Properties:
+   HealthCheckTimeoutSeconds: 3
+   HealthCheckIntervalSeconds: 5
+   Name: Mediawiki-app-tg
+   Port: 80
+   Protocol: HTTP
+   VpcId: !Ref "VPC"
+
+ Route53:
+  Type: AWS::Route53::RecordSetGroup
+  Properties:
+   HostedZoneName: !Ref "HostZone"
+   Comment: 'Hostname creation for Mediawiki application'
+   RecordSets:
+   - Name: !Join ['.', [ Mediawiki-app, !Ref "HostZone"] ]
+     Type: A
+     AliasTarget:
+      HostedZoneId: !GetAtt ApplicationLoadBalancer.CanonicalHostedZoneID
+      DNSName: !GetAtt ApplicationLoadBalancer.DNSName
+
+Outputs:
+ LoadBalancerDNSName:
+  Description: DNS name of load balancer
+  Value: !GetAtt ApplicationLoadBalancer.DNSName
+ SecurityGroupName:
+  Description: Reference of mediawiki security group
+  Value: !Ref InstanceSecurityGroup
