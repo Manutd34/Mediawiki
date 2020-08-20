@@ -12,7 +12,7 @@ Parameters:
  AMI:
   Type: AWS::EC2::Image::Id	
   Description: To get latest AMI ID for Redhat Linux server
-  Default: ami-06817f01dcc7f30be
+  Default: ami-0a54aef4ef3b5f881
  VPC:
   Type: AWS::EC2::VPC::Id
   Description: VPC ID for existing private cloud
@@ -119,24 +119,41 @@ Resources:
     Fn::Base64:
      !Sub |
       #!/bin/bash
+      echo "test"
       sudo -s
-      cd /home
-      apt update
-      echo mysql-server-5.7 mysql-server/root_password password PASSWORD | debconf-set-selections   
-      echo mysql-server-5.7 mysql-server/root_password_again password PASSWORD | debconf-set-selections
-      sudo apt-get install apache2 mysql-server php php-mysql libapache2-mod-php php-xml php-mbstring -y
-      cd /var/www/
-      wget https://releases.wikimedia.org/mediawiki/1.30/mediawiki-1.30.0.tar.gz
-      tar -xvzf mediawiki-1.30.0.tar.gz
-      mv html/ htmlold
-      mv mediawiki-1.30.0 html
-
-      #Setting up database and previleges
-      mysql -u root -p<password> -e "CREATE USER 'Thoughtworks'@'localhost' IDENTIFIED BY 'poc';create database wikiinfo;use wikiinfo;GRANT ALL ON wikiinfo.* TO 'Thoughtworks'@'localhost';FLUSH PRIVILEGES;"
-
-      #Wiki server start
-      service apache2 restart
-
+      # Install the prerequisite OS packages
+      dnf install httpd php php-mysqlnd php-gd php-xml mariadb-server mariadb php-mbstring php-json -y
+      dnf install wget -y
+      yum install firewalld -y
+      # Start the Web Server and Database Service
+      systemctl restart httpd.service
+      systemctl enable httpd.service
+      systemctl start mariadb
+      systemctl enable mariadb
+      # Create Mediawiki Database
+      echo -e "\ny\ny\npoc\npoc\ny\ny\ny\ny" | /usr/bin/mysql_secure_installation
+      echo -e "\ny\ny\npoc\npoc\ny\ny\ny\ny" | /usr/bin/mysql_secure_installation
+      mysql -u root -ppoc -e "CREATE USER 'Thoughtworks'@'localhost' IDENTIFIED BY 'poc';create database wikiinfo;use wikiinfo;GRANT ALL ON wikiinfo.* TO 'Thoughtworks'@'localhost';FLUSH PRIVILEGES;"
+      # Download Mediawiki tarfile
+      wget https://releases.wikimedia.org/mediawiki/1.34/mediawiki-1.34.2.tar.gz
+      tar -zxpvf mediawiki-*.tar.gz
+      mv mediawiki-1.34.2 /var/www/html/mediawiki
+      # Set the required permissions on mediawiki directory
+      chown -R apache:apache /var/www/html/mediawiki/
+      chmod 755 /var/www/html/mediawiki/
+      # Firewall configuration
+      systemctl enable firewalld
+      firewall-offline-cmd --add-service=https
+      firewall-offline-cmd --add-service=http
+      systemctl start firewalld
+      #firewall-cmd --zone=public --add-port=80/tcp --permanent
+      #firewall-cmd --reload
+      #firewall-cmd --permanent --zone=public --add-service=http
+      #firewall-cmd --permanent --zone=public --add-service=https
+      #systemctl restart firewalld
+      # Security (selinux) configuration
+      getenforce
+      restorecon -FR /var/www/html/mediawiki/
 
  ScalingUpPolicy:
   Type: AWS::AutoScaling::ScalingPolicy
