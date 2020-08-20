@@ -1,2 +1,2 @@
 # Mediawiki
-Hosting Mediawiki in Ubuntu EC2
+Hosting Mediawiki in Red Hat Linux
