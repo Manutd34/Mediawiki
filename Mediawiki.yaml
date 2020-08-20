@@ -131,9 +131,9 @@ Resources:
       systemctl start mariadb
       systemctl enable mariadb
       # Create Mediawiki Database
-      echo -e "\ny\ny\npoc\npoc\ny\ny\ny\ny" | /usr/bin/mysql_secure_installation
-      echo -e "\ny\ny\npoc\npoc\ny\ny\ny\ny" | /usr/bin/mysql_secure_installation
-      mysql -u root -ppoc -e "CREATE USER 'Thoughtworks'@'localhost' IDENTIFIED BY 'poc';create database wikiinfo;use wikiinfo;GRANT ALL ON wikiinfo.* TO 'Thoughtworks'@'localhost';FLUSH PRIVILEGES;"
+      echo -e "\ny\ny\n<password>\n<password>\ny\ny\ny\ny" | /usr/bin/mysql_secure_installation
+      echo -e "\ny\ny\n<passwor>d\n<password>\ny\ny\ny\ny" | /usr/bin/mysql_secure_installation
+      mysql -u root -p<password> -e "CREATE USER 'Thoughtworks'@'localhost' IDENTIFIED BY 'poc';create database wikiinfo;use wikiinfo;GRANT ALL ON wikiinfo.* TO 'Thoughtworks'@'localhost';FLUSH PRIVILEGES;"
       # Download Mediawiki tarfile
       wget https://releases.wikimedia.org/mediawiki/1.34/mediawiki-1.34.2.tar.gz
       tar -zxpvf mediawiki-*.tar.gz
