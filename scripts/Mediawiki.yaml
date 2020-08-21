@@ -12,31 +12,31 @@ Parameters:
  AMI:
   Type: AWS::EC2::Image::Id	
   Description: To get latest AMI ID for Redhat Linux server
-  Default: ami-0a54aef4ef3b5f881
+  #Default: ami-0a54aef4ef3b5f881
  VPC:
   Type: AWS::EC2::VPC::Id
   Description: VPC ID for existing private cloud
-  Default: vpc-cb6ecda0
+  #Default: vpc-cb6ecda0
  Subnet1:
   Type: String
   Description: List of subnets available in virtual private cloud
-  Default: subnet-af7f17e3
+  #Default: subnet-af7f17e3
  Subnet2:
   Type: String
   Description: List of subnets available in virtual private cloud
-  Default: subnet-5c488337
+  #Default: subnet-5c488337
  KeyName:
   Type: AWS::EC2::KeyPair::KeyName
   Description: Name of an existing EC2 key pair for SSH access to the EC2 instance.
-  Default: Mediawiki_key
+  #Default: Mediawiki_key
  CertificateARN:
   Type: String
   Description: ARN Certificate details from ACM
-  Default: arn:aws:acm:us-east-2:271416318392:certificate/47b58fc3-54aa-4ac3-80dd-9b79b0f2f7aa
+  #Default: arn:aws:acm:us-east-2:271416318392:certificate/47b58fc3-54aa-4ac3-80dd-9b79b0f2f7aa
  HostZone:
   Type: String
   Description: Creating Route53 record for ALB DNS name
-  Default: mediawiki.poc.com.
+  #Default: mediawiki.poc.com.
 Mappings:
  EnvMap:
   Dev:
